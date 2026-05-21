@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Year One</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #fff;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+    cursor: none;
+  }
+
+  #canvas {
+    position: fixed;
+    inset: 0;
+    display: block;
+  }
+
+  #logo {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    z-index: 100;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  #logo img {
+    display: block;
+    width: 100vw;
+    height: auto;
+  }
+
+  @media (min-width: 1200px) {
+    #logo img {
+      width: 800px;
+      height: auto;
+    }
+  }
+
+  #cursor {
+    position: fixed;
+    width: 8px;
+    height: 8px;
+    background: #000;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 9999;
+    transform: translate(-50%, -50%);
+    transition: width 0.3s ease, height 0.3s ease, opacity 0.3s ease;
+    mix-blend-mode: difference;
+  }
+
+  #cursor.hovering {
+    width: 60px;
+    height: 60px;
+    mix-blend-mode: normal;
+    opacity: 0.85;
+  }
+</style>
+</head>
+<body>
+
+<div id="cursor"></div>
+<canvas id="canvas"></canvas>
+<div id="logo">
+  <img src="assets/logo.svg" alt="Year One" />
+</div>
+
+<script>
+// ─── Image data ───────────────────────────────────────────────────────────────
+const IMAGES_DEF = [
+  { src: "assets/Image-1.png", w: 167, h: 225 },
+  { src: "assets/Image-2.png", w: 127, h: 149 },
+  { src: "assets/Image-3.png", w: 70,  h: 70  },
+  { src: "assets/Image-4.png", w: 149, h: 149 },
+  { src: "assets/Image-5.png", w: 149, h: 87  },
+  { src: "assets/Image-6.png", w: 104, h: 149 },
+  { src: "assets/Image-7.png", w: 167, h: 225 },
+  { src: "assets/Image-8.png", w: 70,  h: 101 },
+  { src: "assets/Image-9.png", w: 70,  h: 86  },
+];
+
+// ─── Layout constants ─────────────────────────────────────────────────────────
+const COL_WIDTH    = 167;
+const COL_GAP      = 18;
+const COL_STRIDE   = COL_WIDTH + COL_GAP; // 185px
+const ROW_GAP      = 32;
+const COL_V_OFFSET = -185; // vertical stagger increment per column
+const BASE_COLS    = 12;   // columns before the pattern repeats
+
+// Natural repeat periods — the canvas just uses modular math, no DOM tiling needed
+const TILE_W = BASE_COLS * COL_STRIDE;                              // 2220px
+const TILE_H = IMAGES_DEF.reduce((s, d) => s + d.h + ROW_GAP, 0); // ~1529px
+
+// ─── Image loading + dominant-colour pre-computation ─────────────────────────
+const imgs      = IMAGES_DEF.map(def => { const i = new Image(); i.src = def.src; return i; });
+const imgColors = IMAGES_DEF.map(() => '#808080');
+
+(function precomputeColors() {
+  const oc   = document.createElement('canvas');
+  const octx = oc.getContext('2d');
+  imgs.forEach((img, i) => {
+    img.onload = () => {
+      const def = IMAGES_DEF[i];
+      try {
+        oc.width = def.w; oc.height = def.h;
+        octx.drawImage(img, 0, 0, def.w, def.h);
+        const cx = def.w >> 1, cy = def.h >> 1;
+        const sz = Math.min(20, def.w >> 2);
+        const d  = octx.getImageData(Math.max(0,cx-sz), Math.max(0,cy-sz), sz*2, sz*2).data;
+        let r=0, g=0, b=0, n=0;
+        for (let j=0; j<d.length; j+=4) { r+=d[j]; g+=d[j+1]; b+=d[j+2]; n++; }
+        imgColors[i] = n ? `rgb(${r/n|0},${g/n|0},${b/n|0})` : '#808080';
+      } catch(_) {}
+    };
+  });
+}());
+
+// ─── Canvas setup ─────────────────────────────────────────────────────────────
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+
+const DPR = window.devicePixelRatio || 1;
+
+function resize() {
+  canvas.width  = Math.round(window.innerWidth  * DPR);
+  canvas.height = Math.round(window.innerHeight * DPR);
+  canvas.style.width  = window.innerWidth  + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── Pan state ────────────────────────────────────────────────────────────────
+// offX/offY are raw, unbounded scroll accumulators.
+// The canvas draw loop uses (offX mod TILE_W) math to tile, so there is no
+// position state that ever needs to jump — the drawing is purely incremental.
+let offX = 0;
+let offY = 0;
+
+const SPEED          = 0.02;   // px/ms — constant regardless of cursor direction
+const BASE_DIR_X     = -0.634;
+const BASE_DIR_Y     =  0.775;
+const STEER_STRENGTH =  0.8;
+const DIR_LERP       =  0.006;
+
+let dirX = BASE_DIR_X, dirY = BASE_DIR_Y;
+let targetDirX = BASE_DIR_X, targetDirY = BASE_DIR_Y;
+
+// ─── Mouse / drag ─────────────────────────────────────────────────────────────
+let mouseX = window.innerWidth / 2, mouseY = window.innerHeight / 2;
+let isDragging = false;
+let dragStartX = 0, dragStartY = 0, dragOffStartX = 0, dragOffStartY = 0;
+
+const cursor = document.getElementById('cursor');
+
+document.addEventListener('mousemove', e => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  cursor.style.left = mouseX + 'px';
+  cursor.style.top  = mouseY + 'px';
+
+  const nx = (mouseX / window.innerWidth  - 0.5) * 2;
+  const ny = (mouseY / window.innerHeight - 0.5) * 2;
+  targetDirX = BASE_DIR_X + nx * STEER_STRENGTH;
+  targetDirY = BASE_DIR_Y + ny * STEER_STRENGTH;
+
+  if (isDragging) {
+    offX = dragOffStartX + (e.clientX - dragStartX);
+    offY = dragOffStartY + (e.clientY - dragStartY);
+  }
+});
+
+document.addEventListener('mousedown', e => {
+  isDragging = true;
+  dragStartX = e.clientX; dragStartY = e.clientY;
+  dragOffStartX = offX;   dragOffStartY = offY;
+});
+
+document.addEventListener('mouseup', () => { isDragging = false; });
+
+document.addEventListener('wheel', e => {
+  e.preventDefault();
+  offX -= e.deltaX * 0.8;
+  offY -= e.deltaY * 0.8;
+}, { passive: false });
+
+// ─── Hit detection ────────────────────────────────────────────────────────────
+// For a given screen point, find which image (if any) it falls inside.
+// Uses the same coordinate math as the draw loop so they're always in sync.
+function getCellAt(mx, my) {
+  const W = canvas.width;
+  const ox = ((offX % TILE_W) + TILE_W) % TILE_W;
+  const oy = ((offY % TILE_H) + TILE_H) % TILE_H;
+
+  const firstCi = Math.floor(-ox / COL_STRIDE) - 1;
+  const lastCi  = firstCi + Math.ceil(W / COL_STRIDE) + 3;
+
+  for (let ci = firstCi; ci <= lastCi; ci++) {
+    const sx = ci * COL_STRIDE + ox;
+    if (sx + COL_WIDTH < mx || sx > mx) continue;
+
+    const colMod   = ((ci % BASE_COLS) + BASE_COLS) % BASE_COLS;
+    const colBase  = colMod * COL_V_OFFSET + oy;
+    const k        = Math.floor((my - colBase) / TILE_H);
+    const iterBase = colBase + k * TILE_H;
+
+    let iy = iterBase;
+    for (let i = 0; i < IMAGES_DEF.length; i++) {
+      const def = IMAGES_DEF[i];
+      const top = iy; iy += def.h + ROW_GAP;
+      if (my < top || my >= top + def.h) continue;
+      const ix = sx + ((COL_WIDTH - def.w) >> 1);
+      if (mx >= ix && mx < ix + def.w) return i;
+    }
+  }
+  return -1;
+}
+
+// ─── Draw one frame ───────────────────────────────────────────────────────────
+// The draw loop maps the unbounded offX/offY into a single tile period and then
+// draws enough column repetitions to cover the viewport in every direction.
+// No position ever jumps — each frame is fully recomputed from scratch.
+function draw() {
+  const W = canvas.width, H = canvas.height;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+
+  const ox = ((offX % TILE_W) + TILE_W) % TILE_W;
+  const oy = ((offY % TILE_H) + TILE_H) % TILE_H;
+
+  const firstCi = Math.floor(-ox / COL_STRIDE) - 1;
+  const lastCi  = firstCi + Math.ceil(W / COL_STRIDE) + 3;
+
+  for (let ci = firstCi; ci <= lastCi; ci++) {
+    const sx = ci * COL_STRIDE + ox;
+    if (sx + COL_WIDTH < 0 || sx > W) continue;
+
+    const colMod  = ((ci % BASE_COLS) + BASE_COLS) % BASE_COLS;
+    const colBase = colMod * COL_V_OFFSET + oy;
+    const k0      = Math.floor(-colBase / TILE_H) - 1;
+
+    for (let k = k0; ; k++) {
+      const iterBase = colBase + k * TILE_H;
+      if (iterBase > H + 10) break;
+
+      let iy = iterBase;
+      for (let i = 0; i < IMAGES_DEF.length; i++) {
+        const def = IMAGES_DEF[i];
+        const top = iy; iy += def.h + ROW_GAP;
+        if (top + def.h < 0 || top > H) continue;
+        const img = imgs[i];
+        if (img.complete && img.naturalWidth > 0) {
+          ctx.drawImage(img, sx + ((COL_WIDTH - def.w) >> 1), top, def.w, def.h);
+        }
+      }
+    }
+  }
+}
+
+// ─── Animation loop ───────────────────────────────────────────────────────────
+let lastTime = null, hoveredIdx = -1;
+
+function tick(ts) {
+  if (!lastTime) lastTime = ts;
+  const dt = Math.min(ts - lastTime, 50);
+  lastTime = ts;
+
+  dirX += (targetDirX - dirX) * DIR_LERP;
+  dirY += (targetDirY - dirY) * DIR_LERP;
+  const mag = Math.sqrt(dirX * dirX + dirY * dirY);
+  const vx  = (dirX / mag) * SPEED;
+  const vy  = (dirY / mag) * SPEED;
+
+  if (!isDragging) { offX += vx * dt; offY += vy * dt; }
+
+  draw();
+
+  // Cursor hover
+  const idx = getCellAt(mouseX, mouseY);
+  if (idx !== hoveredIdx) {
+    hoveredIdx = idx;
+    cursor.style.background = idx >= 0 ? imgColors[idx] : '#000';
+  }
+  cursor.classList.toggle('hovering', idx >= 0);
+
+  requestAnimationFrame(tick);
+}
+
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
