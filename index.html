@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Year One</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  * { margin: 0; padding: 0; box-sizing: border-box; cursor: none !important; }
 
   body {
     background: #fff;
@@ -402,13 +402,14 @@ const TILE_W = BASE_COLS * COL_STRIDE;
 // Each asset appears in exactly one column; the whole grid is the repeating tile.
 const colAssignments = Array.from({length: BASE_COLS}, () => []);
 const colHeights     = new Array(BASE_COLS).fill(0);
+const assetCol       = new Int32Array(IMAGES_DEF.length); // reverse lookup: asset → column
 IMAGES_DEF.forEach((def, i) => {
   let minCol = 0;
   for (let c = 1; c < BASE_COLS; c++) if (colHeights[c] < colHeights[minCol]) minCol = c;
   colAssignments[minCol].push(i);
   colHeights[minCol] += def.h + ROW_GAP;
+  assetCol[i] = minCol;
 });
-const TILE_H = Math.max(...colHeights);
 
 // ─── Media state ─────────────────────────────────────────────────────────────
 // bitmaps[i]  – pre-scaled ImageBitmap at display size (null until loaded)
@@ -460,22 +461,31 @@ function _doLoad(i) {
 
   const img = new Image();
   img.onload = () => {
-    const dpr  = window.devicePixelRatio || 1;
-    // Compute display height from browser's own natural dimensions (post-EXIF).
-    // This guarantees correct aspect ratio regardless of what the metadata says.
+    const dpr = window.devicePixelRatio || 1;
+    // Trust the browser's naturalWidth/naturalHeight — it applies EXIF rotation
+    // so these are always the correct display dimensions, regardless of metadata.
     const natW = img.naturalWidth  || def.w;
     const natH = img.naturalHeight || def.h;
-    const bw   = Math.round(def.w * dpr);
-    const bh   = Math.round(natH * def.w / natW * dpr);
-    createImageBitmap(img, {
-      resizeWidth:   bw,
-      resizeHeight:  bh,
-      resizeQuality: 'medium'
-    }).then(bm => {
+    const correctH = Math.round(natH * def.w / natW);
+    // Patch colHeights by the delta so the per-column tile period stays in sync
+    // with the actual def.h values used for spacing in the draw loop.
+    if (correctH !== def.h) {
+      colHeights[assetCol[i]] += correctH - def.h;
+      def.h = correctH;
+    }
+
+    const oc = document.createElement('canvas');
+    oc.width  = Math.round(def.w * dpr);
+    oc.height = Math.round(correctH * dpr);
+    const ox  = oc.getContext('2d');
+    ox.imageSmoothingEnabled = true;
+    ox.imageSmoothingQuality = 'medium';
+    // drawImage(img) applies EXIF orientation; downscales to display size in one step
+    ox.drawImage(img, 0, 0, oc.width, oc.height);
+    createImageBitmap(oc).then(bm => {
       bitmaps[i]   = bm;
       imgColors[i] = sampleColor(bm, def);
     }).catch(() => {
-      // Fallback: store img directly; canvas will downscale with smoothing
       bitmaps[i] = img;
     }).finally(done);
   };
@@ -629,11 +639,9 @@ function getCellAt(mx, my) {
 
     let iy = iterBase;
     for (const assetIdx of assets) {
-      const def   = IMAGES_DEF[assetIdx];
-      const bm    = bitmaps[assetIdx];
-      const drawH = (bm && bm.height) ? Math.round(bm.height / DPR) : def.h;
-      const top = iy; iy += drawH + ROW_GAP;
-      if (my < top || my >= top + drawH) continue;
+      const def = IMAGES_DEF[assetIdx];
+      const top = iy; iy += def.h + ROW_GAP;
+      if (my < top || my >= top + def.h) continue;
       const ix = sx + ((COL_WIDTH - def.w) >> 1);
       if (mx >= ix && mx < ix + def.w) return assetIdx;
     }
@@ -677,19 +685,16 @@ function draw() {
       let iy = iterBase;
       for (const assetIdx of assets) {
         const def = IMAGES_DEF[assetIdx];
-        const bm  = bitmaps[assetIdx];
-        // Use bitmap's actual height so aspect ratio is preserved even if
-        // the pre-stored def.h was slightly off (e.g. EXIF/rounding).
-        const drawH = (bm && bm.height) ? Math.round(bm.height / DPR) : def.h;
-        const top = iy; iy += drawH + ROW_GAP;
-        if (top + drawH < 0 || top > H) continue;
+        const top = iy; iy += def.h + ROW_GAP;
+        if (top + def.h < 0 || top > H) continue;
 
         const ix = sx + ((COL_WIDTH - def.w) >> 1);
+        const bm  = bitmaps[assetIdx];
 
         if (assetIdx === activeVideoIdx && activeVideoEl && activeVideoEl.readyState >= 2) {
-          ctx.drawImage(activeVideoEl, ix, top, def.w, drawH);
+          ctx.drawImage(activeVideoEl, ix, top, def.w, def.h);
         } else if (bm) {
-          ctx.drawImage(bm, ix, top, def.w, drawH);
+          ctx.drawImage(bm, ix, top, def.w, def.h);
         } else {
           ctx.fillRect(ix, top, def.w, def.h); // placeholder while loading
           enqueue(assetIdx, true);              // bump to front of queue
