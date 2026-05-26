@@ -115,6 +115,7 @@
   }
 
   .island-cell {
+    opacity: 0;
     overflow: hidden;
     background: rgba(255,255,255,0.15);
     will-change: opacity;
@@ -557,40 +558,51 @@ function sampleColor(bitmap, def) {
 function _doLoad(i) {
   activeLoads++;
   const def = IMAGES_DEF[i];
-  const src = def.type === 'video' ? def.poster : def.src;
 
-  const img = new Image();
-  img.onload = () => {
+  function buildBitmap(source, srcW, srcH) {
     const dpr = window.devicePixelRatio || 1;
-    // Trust the browser's naturalWidth/naturalHeight — it applies EXIF rotation
-    // so these are always the correct display dimensions, regardless of metadata.
-    const natW = img.naturalWidth  || def.w;
-    const natH = img.naturalHeight || def.h;
-    const correctH = Math.round(natH * def.w / natW);
-    // Patch colHeights by the scaled delta so the tile period stays in sync.
+    const correctH = Math.round(srcH * def.w / srcW);
     if (correctH !== def.h) {
       colHeights[assetCol[i]] += Math.round(correctH * ASSET_H_SCALE) - Math.round(def.h * ASSET_H_SCALE);
       def.h = correctH;
     }
-
-    // Create bitmap at exact draw resolution (COL_WIDTH×DPR) so canvas drawImage
-    // is always a 1:1 blit with no per-frame GPU upscaling.
     const oc = document.createElement('canvas');
     oc.width  = Math.round(COL_WIDTH * dpr);
     oc.height = Math.round(correctH * ASSET_H_SCALE * dpr);
     const ox  = oc.getContext('2d');
     ox.imageSmoothingEnabled = true;
-    ox.imageSmoothingQuality = 'medium';
-    ox.drawImage(img, 0, 0, oc.width, oc.height);
+    ox.imageSmoothingQuality = 'high';
+    ox.drawImage(source, 0, 0, oc.width, oc.height);
     createImageBitmap(oc).then(bm => {
       bitmaps[i]   = bm;
       imgColors[i] = sampleColor(bm, def);
     }).catch(() => {
-      bitmaps[i] = img;
+      bitmaps[i] = source;
     }).finally(done);
-  };
-  img.onerror = done;
-  img.src = src;
+  }
+
+  if (def.type === 'video') {
+    // Seek to the first frame of the actual video — native resolution, no upscaling artefacts.
+    const v = document.createElement('video');
+    v.muted       = true;
+    v.playsInline = true;
+    v.preload     = 'metadata';
+    v.addEventListener('seeked', () => {
+      buildBitmap(v, v.videoWidth || def.w, v.videoHeight || def.h);
+      v.src = ''; // release network resource immediately after capture
+    }, { once: true });
+    v.addEventListener('loadedmetadata', () => { v.currentTime = 0.001; }, { once: true });
+    v.addEventListener('error', done, { once: true });
+    v.src = def.src;
+  } else {
+    const img = new Image();
+    img.onload = () => {
+      // Trust naturalWidth/naturalHeight — browser applies EXIF rotation
+      buildBitmap(img, img.naturalWidth || def.w, img.naturalHeight || def.h);
+    };
+    img.onerror = done;
+    img.src = def.src;
+  }
 
   function done() {
     loadState[i] = 2;
@@ -793,10 +805,8 @@ function getCellAt(mx, my) {
 }
 
 function getCellInfo(mx, my) {
-  const W   = canvas.width / DPR;
-  const rox = Math.round(offX);
-  const roy = Math.round(offY);
-  const ox  = ((rox % TILE_W) + TILE_W) % TILE_W;
+  const W  = canvas.width / DPR;
+  const ox = ((offX % TILE_W) + TILE_W) % TILE_W;
 
   const firstCi = Math.floor(-ox / COL_STRIDE) - 1;
   const lastCi  = firstCi + Math.ceil(W / COL_STRIDE) + 3;
@@ -808,7 +818,7 @@ function getCellInfo(mx, my) {
     const colMod   = ((ci % BASE_COLS) + BASE_COLS) % BASE_COLS;
     const assets   = colAssignments[colMod];
     const cth      = colHeights[colMod];
-    const colOy    = ((roy % cth) + cth) % cth;
+    const colOy    = ((offY % cth) + cth) % cth;
     const colBase  = colMod * COL_V_OFFSET + colOy;
     const k        = Math.floor((my - colBase) / cth);
     const iterBase = colBase + k * cth;
@@ -832,10 +842,7 @@ function draw() {
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, W, H);
 
-  // Integer-pixel offsets eliminate sub-pixel jitter
-  const rox = Math.round(offX);
-  const roy = Math.round(offY);
-  const ox  = ((rox % TILE_W) + TILE_W) % TILE_W;
+  const ox  = ((offX % TILE_W) + TILE_W) % TILE_W;
 
   const firstCi = Math.floor(-ox / COL_STRIDE) - 1;
   const lastCi  = firstCi + Math.ceil(W / COL_STRIDE) + 3;
@@ -850,7 +857,7 @@ function draw() {
     const assets = colAssignments[colMod];
     // Each column tiles at its own natural height — no cross-column boundary gap
     const cth    = colHeights[colMod];
-    const colOy  = ((roy % cth) + cth) % cth;
+    const colOy  = ((offY % cth) + cth) % cth;
     const colBase = colMod * COL_V_OFFSET + colOy;
     const k0      = Math.floor(-colBase / cth) - 1;
 
@@ -974,7 +981,6 @@ function openIsland(idx, clickRect) {
     // Reserve correct height before image loads — eliminates layout-shift jitter
     img.style.aspectRatio = `${d.w}/${d.h}`;
     cell.appendChild(img);
-    cell.style.opacity = '0';                           // hidden until cascade
     cell.style.setProperty('--cell-delay', `${i * 50}ms`); // pre-bake stagger
 
     const col = colHts[0] <= colHts[1] ? 0 : 1;
@@ -1033,10 +1039,12 @@ function openIsland(idx, clickRect) {
         flyEl.style.transform = 'translate(0,0) scale(1)';
       }));
 
-      // 3. After fly lands: cascade, then remove fly on next frame
+      // 3. After fly lands: cascade + cross-fade fly out in sync with cell[0] fading in
       setTimeout(() => {
         islandGrid.classList.add('cascade');
-        requestAnimationFrame(() => flyEl.remove());
+        flyEl.style.transition = 'opacity .3s linear';
+        flyEl.style.opacity = '0';
+        setTimeout(() => flyEl.remove(), 320);
       }, 410);
     }, 280);
 
