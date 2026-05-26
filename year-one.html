@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Year One</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; cursor: none !important; }
+
+  body {
+    background: #fff;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+    cursor: none;
+  }
+
+  #canvas {
+    position: fixed;
+    inset: 0;
+    display: block;
+  }
+
+  #logo {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    z-index: 100;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  #logo img {
+    display: block;
+    width: 100vw;
+    height: auto;
+  }
+
+  @media (min-width: 1200px) {
+    #logo img {
+      width: 800px;
+      height: auto;
+    }
+  }
+
+  #cursor {
+    position: fixed;
+    width: 8px;
+    height: 8px;
+    background: #000;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 9999;
+    transform: translate(-50%, -50%);
+    transition: width 0.7s cubic-bezier(0.34, 1.56, 0.64, 1),
+                height 0.7s cubic-bezier(0.34, 1.56, 0.64, 1),
+                background-color 0.3s ease;
+    mix-blend-mode: difference;
+  }
+
+  #cursor.hovering {
+    width: 40px;
+    height: 40px;
+    mix-blend-mode: normal;
+    opacity: 1;
+  }
+</style>
+</head>
+<body>
+
+<div id="cursor"></div>
+<canvas id="canvas"></canvas>
+<div id="logo">
+  <img src="assets/logo.svg" alt="Year One" />
+</div>
+
+<script>
+// ─── Asset definitions ────────────────────────────────────────────────────────
+// 307 assets: 262 images + 45 videos, in chronological order.
+// Videos show their poster frame at rest; hover auto-plays for 3 s then reverts.
+const IMAGES_DEF = [
+  { src: "1-year-assets/1year-1.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-2.jpg", w: 167, h: 214, type: 'image' },
+  { src: "1-year-assets/1year-3.mov", poster: "1-year-assets/1year-3-poster.jpg", w: 167, h: 95, type: 'video' },
+  { src: "1-year-assets/1year-4.mov", poster: "1-year-assets/1year-4-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-5.jpg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-6.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-7.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-8.jpg", w: 167, h: 228, type: 'image' },
+  { src: "1-year-assets/1year-9.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-10.mov", poster: "1-year-assets/1year-10-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-11.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-12.mov", poster: "1-year-assets/1year-12-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-13.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-14.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-15.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-16.mov", poster: "1-year-assets/1year-16-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-17.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-18.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-19.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-20.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-21.jpeg", w: 167, h: 189, type: 'image' },
+  { src: "1-year-assets/1year-22.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-23.mov", poster: "1-year-assets/1year-23-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-24.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-25.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-26.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-27.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-28.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-29.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-30.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-31.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-32.jpeg", w: 167, h: 217, type: 'image' },
+  { src: "1-year-assets/1year-33.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-34.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-35.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-36.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-37.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-38.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-39.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-40.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-41.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-42.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-43.jpeg", w: 167, h: 230, type: 'image' },
+  { src: "1-year-assets/1year-44.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-45.jpeg", w: 167, h: 178, type: 'image' },
+  { src: "1-year-assets/1year-46.jpeg", w: 167, h: 268, type: 'image' },
+  { src: "1-year-assets/1year-47.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-48.jpeg", w: 167, h: 229, type: 'image' },
+  { src: "1-year-assets/1year-49.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-50.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-51.jpeg", w: 167, h: 227, type: 'image' },
+  { src: "1-year-assets/1year-52.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-53.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-54.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-55.jpeg", w: 167, h: 265, type: 'image' },
+  { src: "1-year-assets/1year-56.jpeg", w: 167, h: 236, type: 'image' },
+  { src: "1-year-assets/1year-57.jpeg", w: 167, h: 269, type: 'image' },
+  { src: "1-year-assets/1year-58.jpeg", w: 167, h: 202, type: 'image' },
+  { src: "1-year-assets/1year-59.jpeg", w: 167, h: 236, type: 'image' },
+  { src: "1-year-assets/1year-60.jpeg", w: 167, h: 220, type: 'image' },
+  { src: "1-year-assets/1year-61.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-62.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-63.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-64.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-65.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-66.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-67.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-68.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-69.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-70.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-71.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-72.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-73.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-74.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-75.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-76.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-77.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-78.mov", poster: "1-year-assets/1year-78-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-79.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-80.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-81.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-82.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-83.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-84.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-85.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-86.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-87.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-88.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-89.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-90.mov", poster: "1-year-assets/1year-90-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-91.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-92.jpeg", w: 167, h: 248, type: 'image' },
+  { src: "1-year-assets/1year-93.jpeg", w: 167, h: 161, type: 'image' },
+  { src: "1-year-assets/1year-94.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-95.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-96.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-97.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-98.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-99.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-100.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-101.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-102.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-103.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-104.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-105.jpg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-106.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-107.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-108.mov", poster: "1-year-assets/1year-108-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-109.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-110.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-111.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-112.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-113.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-114.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-115.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-116.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-117.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-118.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-119.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-120.jpg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-121.mov", poster: "1-year-assets/1year-121-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-122.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-123.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-124.jpeg", w: 167, h: 147, type: 'image' },
+  { src: "1-year-assets/1year-125.mov", poster: "1-year-assets/1year-125-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-126.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-127.jpeg", w: 167, h: 249, type: 'image' },
+  { src: "1-year-assets/1year-128.mov", poster: "1-year-assets/1year-128-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-129.mov", poster: "1-year-assets/1year-129-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-130.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-131.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-132.jpg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-133.mov", poster: "1-year-assets/1year-133-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-134.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-135.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-136.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-137.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-138.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-139.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-140.jpeg", w: 167, h: 297, type: 'image' },
+  { src: "1-year-assets/1year-141.jpeg", w: 167, h: 297, type: 'image' },
+  { src: "1-year-assets/1year-142.jpeg", w: 167, h: 297, type: 'image' },
+  { src: "1-year-assets/1year-143.jpeg", w: 167, h: 297, type: 'image' },
+  { src: "1-year-assets/1year-144.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-145.jpg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-146.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-147.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-148.mov", poster: "1-year-assets/1year-148-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-149.mov", poster: "1-year-assets/1year-149-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-150.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-151.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-152.mov", poster: "1-year-assets/1year-152-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-153.mp4", poster: "1-year-assets/1year-153-poster.jpg", w: 167, h: 95, type: 'video' },
+  { src: "1-year-assets/1year-154.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-155.mov", poster: "1-year-assets/1year-155-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-156.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-157.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-158.jpeg", w: 167, h: 264, type: 'image' },
+  { src: "1-year-assets/1year-159.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-160.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-161.jpg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-162.mov", poster: "1-year-assets/1year-162-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-163.mov", poster: "1-year-assets/1year-163-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-164.jpg", w: 167, h: 102, type: 'image' },
+  { src: "1-year-assets/1year-165.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-166.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-167.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-168.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-169.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-170.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-171.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-172.mov", poster: "1-year-assets/1year-172-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-173.jpeg", w: 167, h: 253, type: 'image' },
+  { src: "1-year-assets/1year-174.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-175.mov", poster: "1-year-assets/1year-175-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-176.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-177.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-178.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-179.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-180.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-181.mov", poster: "1-year-assets/1year-181-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-182.mov", poster: "1-year-assets/1year-182-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-183.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-184.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-185.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-186.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-187.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-188.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-189.jpg", w: 167, h: 297, type: 'image' },
+  { src: "1-year-assets/1year-190.jpg", w: 167, h: 297, type: 'image' },
+  { src: "1-year-assets/1year-191.jpg", w: 167, h: 297, type: 'image' },
+  { src: "1-year-assets/1year-192.jpeg", w: 167, h: 240, type: 'image' },
+  { src: "1-year-assets/1year-193.mov", poster: "1-year-assets/1year-193-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-194.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-195.jpg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-196.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-197.mov", poster: "1-year-assets/1year-197-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-198.jpeg", w: 167, h: 242, type: 'image' },
+  { src: "1-year-assets/1year-199.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-200.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-201.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-202.jpeg", w: 167, h: 157, type: 'image' },
+  { src: "1-year-assets/1year-203.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-204.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-205.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-206.jpeg", w: 167, h: 198, type: 'image' },
+  { src: "1-year-assets/1year-207.mov", poster: "1-year-assets/1year-207-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-208.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-209.jpg", w: 167, h: 258, type: 'image' },
+  { src: "1-year-assets/1year-210.jpg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-211.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-212.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-213.mov", poster: "1-year-assets/1year-213-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-214.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-215.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-216.mov", poster: "1-year-assets/1year-216-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-217.jpeg", w: 167, h: 196, type: 'image' },
+  { src: "1-year-assets/1year-218.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-219.mov", poster: "1-year-assets/1year-219-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-220.jpg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-221.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-222.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-223.jpeg", w: 167, h: 193, type: 'image' },
+  { src: "1-year-assets/1year-224.jpeg", w: 167, h: 206, type: 'image' },
+  { src: "1-year-assets/1year-225.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-226.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-227.jpeg", w: 167, h: 240, type: 'image' },
+  { src: "1-year-assets/1year-228.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-229.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-230.jpg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-231.jpg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-232.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-233.mp4", poster: "1-year-assets/1year-233-poster.jpg", w: 167, h: 299, type: 'video' },
+  { src: "1-year-assets/1year-234.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-235.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-236.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-237.mov", poster: "1-year-assets/1year-237-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-238.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-239.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-240.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-241.jpeg", w: 167, h: 218, type: 'image' },
+  { src: "1-year-assets/1year-242.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-243.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-244.jpeg", w: 167, h: 235, type: 'image' },
+  { src: "1-year-assets/1year-245.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-246.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-247.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-248.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-249.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-250.jpg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-251.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-252.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-253.mov", poster: "1-year-assets/1year-253-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-254.jpg", w: 167, h: 231, type: 'image' },
+  { src: "1-year-assets/1year-255.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-256.jpeg", w: 167, h: 250, type: 'image' },
+  { src: "1-year-assets/1year-257.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-258.jpeg", w: 167, h: 219, type: 'image' },
+  { src: "1-year-assets/1year-259.jpeg", w: 167, h: 209, type: 'image' },
+  { src: "1-year-assets/1year-260.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-261.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-262.jpg", w: 167, h: 279, type: 'image' },
+  { src: "1-year-assets/1year-263.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-264.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-265.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-266.jpeg", w: 167, h: 216, type: 'image' },
+  { src: "1-year-assets/1year-267.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-268.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-269.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-270.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-271.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-272.jpeg", w: 167, h: 218, type: 'image' },
+  { src: "1-year-assets/1year-273.mov", poster: "1-year-assets/1year-273-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-274.jpeg", w: 167, h: 234, type: 'image' },
+  { src: "1-year-assets/1year-275.jpeg", w: 167, h: 185, type: 'image' },
+  { src: "1-year-assets/1year-276.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-277.mov", poster: "1-year-assets/1year-277-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-278.jpeg", w: 167, h: 216, type: 'image' },
+  { src: "1-year-assets/1year-279.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-280.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-281.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-282.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-283.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-284.mov", poster: "1-year-assets/1year-284-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-285.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-286.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-287.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-288.mov", poster: "1-year-assets/1year-288-poster.jpg", w: 167, h: 223, type: 'video' },
+  { src: "1-year-assets/1year-289.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-290.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-291.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-292.jpeg", w: 167, h: 201, type: 'image' },
+  { src: "1-year-assets/1year-293.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-294.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-295.mov", poster: "1-year-assets/1year-295-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-296.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-297.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-298.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-299.jpeg", w: 167, h: 299, type: 'image' },
+  { src: "1-year-assets/1year-300.mov", poster: "1-year-assets/1year-300-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-301.mov", poster: "1-year-assets/1year-301-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-302.mov", poster: "1-year-assets/1year-302-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-303.mov", poster: "1-year-assets/1year-303-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-304.mov", poster: "1-year-assets/1year-304-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-305.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-306.jpeg", w: 167, h: 125, type: 'image' },
+  { src: "1-year-assets/1year-307.mov", poster: "1-year-assets/1year-307-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-308.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-309.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-310.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-311.mov", poster: "1-year-assets/1year-311-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-312.mov", poster: "1-year-assets/1year-312-poster.jpg", w: 167, h: 297, type: 'video' },
+  { src: "1-year-assets/1year-313.jpeg", w: 167, h: 223, type: 'image' },
+  { src: "1-year-assets/1year-314.jpg", w: 167, h: 223, type: 'image' },
+];
+
+// ─── Layout constants ─────────────────────────────────────────────────────────
+const COL_WIDTH    = 167;
+const COL_GAP      = 18;
+const COL_STRIDE   = COL_WIDTH + COL_GAP; // 185px
+const ROW_GAP      = 32;
+const COL_V_OFFSET = -185;
+const BASE_COLS    = 12;
+
+const TILE_W = BASE_COLS * COL_STRIDE;
+
+// ─── Distribute assets across columns (greedy: shortest column first) ─────────
+// Each asset appears in exactly one column; the whole grid is the repeating tile.
+const colAssignments = Array.from({length: BASE_COLS}, () => []);
+const colHeights     = new Array(BASE_COLS).fill(0);
+const assetCol       = new Int32Array(IMAGES_DEF.length); // reverse lookup: asset → column
+IMAGES_DEF.forEach((def, i) => {
+  let minCol = 0;
+  for (let c = 1; c < BASE_COLS; c++) if (colHeights[c] < colHeights[minCol]) minCol = c;
+  colAssignments[minCol].push(i);
+  colHeights[minCol] += def.h + ROW_GAP;
+  assetCol[i] = minCol;
+});
+
+// ─── Media state ─────────────────────────────────────────────────────────────
+// bitmaps[i]  – pre-scaled ImageBitmap at display size (null until loaded)
+// videoEls[i] – HTMLVideoElement, created only on first hover (null otherwise)
+// imgColors[i]– sampled centre colour for cursor tint
+const bitmaps   = new Array(IMAGES_DEF.length).fill(null);
+const videoEls  = new Array(IMAGES_DEF.length).fill(null);
+const imgColors = IMAGES_DEF.map(() => '#808080');
+
+// ─── Lazy, concurrency-limited image loader ───────────────────────────────────
+// Key insight: iPhone photos are ~12 MP. Drawing them downscaled to 167 px every
+// frame is extremely expensive. createImageBitmap pre-scales once to display size
+// so each draw() is a trivial blit. It also releases the full-res decoded buffer,
+// cutting per-image GPU memory from ~46 MB to ~0.1 MB.
+const MAX_CONCURRENT = 6;
+let   activeLoads    = 0;
+const loadQueue      = [];
+// 0 = unqueued · 1 = queued/in-flight · 2 = done
+const loadState      = new Uint8Array(IMAGES_DEF.length);
+
+const offCanvas = document.createElement('canvas');
+const offCtx    = offCanvas.getContext('2d', { willReadFrequently: true });
+
+function sampleColor(bitmap, def) {
+  try {
+    offCanvas.width = def.w; offCanvas.height = def.h;
+    offCtx.drawImage(bitmap, 0, 0, def.w, def.h);
+    const d = offCtx.getImageData(0, 0, def.w, def.h).data;
+    let bestChroma = -1, bestR = 128, bestG = 128, bestB = 128;
+    // Score by chroma (max − min): rewards both saturation AND brightness.
+    // A dark navy has high saturation but low chroma; a bright red has both.
+    // min > 120: skip max channel — keeps only bright vivid pixels.
+    for (let j = 0; j < d.length; j += 12) {
+      const r = d[j], g = d[j+1], b = d[j+2];
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      if (max < 120 || min > 210) continue; // reject dark + near-white
+      const chroma = max - min;
+      if (chroma > bestChroma) { bestChroma = chroma; bestR = r; bestG = g; bestB = b; }
+    }
+    return `rgb(${bestR},${bestG},${bestB})`;
+  } catch(_) { return '#808080'; }
+}
+
+function _doLoad(i) {
+  activeLoads++;
+  const def = IMAGES_DEF[i];
+  const src = def.type === 'video' ? def.poster : def.src;
+
+  const img = new Image();
+  img.onload = () => {
+    const dpr = window.devicePixelRatio || 1;
+    // Trust the browser's naturalWidth/naturalHeight — it applies EXIF rotation
+    // so these are always the correct display dimensions, regardless of metadata.
+    const natW = img.naturalWidth  || def.w;
+    const natH = img.naturalHeight || def.h;
+    const correctH = Math.round(natH * def.w / natW);
+    // Patch colHeights by the delta so the per-column tile period stays in sync
+    // with the actual def.h values used for spacing in the draw loop.
+    if (correctH !== def.h) {
+      colHeights[assetCol[i]] += correctH - def.h;
+      def.h = correctH;
+    }
+
+    const oc = document.createElement('canvas');
+    oc.width  = Math.round(def.w * dpr);
+    oc.height = Math.round(correctH * dpr);
+    const ox  = oc.getContext('2d');
+    ox.imageSmoothingEnabled = true;
+    ox.imageSmoothingQuality = 'medium';
+    // drawImage(img) applies EXIF orientation; downscales to display size in one step
+    ox.drawImage(img, 0, 0, oc.width, oc.height);
+    createImageBitmap(oc).then(bm => {
+      bitmaps[i]   = bm;
+      imgColors[i] = sampleColor(bm, def);
+    }).catch(() => {
+      bitmaps[i] = img;
+    }).finally(done);
+  };
+  img.onerror = done;
+  img.src = src;
+
+  function done() {
+    loadState[i] = 2;
+    activeLoads--;
+    _drain();
+  }
+}
+
+function _drain() {
+  while (activeLoads < MAX_CONCURRENT && loadQueue.length > 0) {
+    _doLoad(loadQueue.shift());
+  }
+}
+
+function enqueue(i, urgent) {
+  if (loadState[i] === 2) return;
+  if (loadState[i] === 0) {
+    loadState[i] = 1;
+    if (urgent) loadQueue.unshift(i); else loadQueue.push(i);
+    _drain();
+  } else if (urgent) {
+    // Already queued but not yet started — move to front
+    const idx = loadQueue.indexOf(i);
+    if (idx > 0) { loadQueue.splice(idx, 1); loadQueue.unshift(i); }
+  }
+}
+
+// Pre-queue everything in background so it all loads eventually
+for (let i = 0; i < IMAGES_DEF.length; i++) enqueue(i, false);
+
+// ─── Canvas setup ─────────────────────────────────────────────────────────────
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+const DPR    = window.devicePixelRatio || 1;
+
+function resize() {
+  canvas.width  = Math.round(window.innerWidth  * DPR);
+  canvas.height = Math.round(window.innerHeight * DPR);
+  canvas.style.width  = window.innerWidth  + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.imageSmoothingEnabled  = true;
+  ctx.imageSmoothingQuality  = 'low';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── Pan state ────────────────────────────────────────────────────────────────
+let offX = 0, offY = 0;
+
+const SPEED          =  0.02;
+const BASE_DIR_X     = -0.634;
+const BASE_DIR_Y     =  0.775;
+const STEER_STRENGTH =  0.8;
+const DIR_LERP       =  0.006;
+
+let dirX = BASE_DIR_X, dirY = BASE_DIR_Y;
+let targetDirX = BASE_DIR_X, targetDirY = BASE_DIR_Y;
+
+// ─── Drag / wheel ─────────────────────────────────────────────────────────────
+let mouseX = window.innerWidth / 2, mouseY = window.innerHeight / 2;
+let isDragging = false;
+let dragStartX = 0, dragStartY = 0, dragOffStartX = 0, dragOffStartY = 0;
+
+document.addEventListener('mousemove', e => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  cursor.style.left = mouseX + 'px';
+  cursor.style.top  = mouseY + 'px';
+
+  const nx = (mouseX / window.innerWidth  - 0.5) * 2;
+  const ny = (mouseY / window.innerHeight - 0.5) * 2;
+  targetDirX = BASE_DIR_X + nx * STEER_STRENGTH;
+  targetDirY = BASE_DIR_Y + ny * STEER_STRENGTH;
+
+  if (isDragging) {
+    offX = dragOffStartX + (e.clientX - dragStartX);
+    offY = dragOffStartY + (e.clientY - dragStartY);
+  }
+});
+
+document.addEventListener('mousedown', e => {
+  isDragging = true;
+  dragStartX = e.clientX; dragStartY = e.clientY;
+  dragOffStartX = offX;   dragOffStartY = offY;
+});
+document.addEventListener('mouseup',   () => { isDragging = false; });
+
+document.addEventListener('wheel', e => {
+  e.preventDefault();
+  offX -= e.deltaX * 0.8;
+  offY -= e.deltaY * 0.8;
+}, { passive: false });
+
+// ─── Video hover state ────────────────────────────────────────────────────────
+let activeVideoIdx = -1;   // index of the currently playing video asset
+let activeVideoEl  = null;
+let videoStopTimer = null;
+
+function startVideo(idx) {
+  if (activeVideoEl) stopVideo();
+  // Create the video element on first hover — avoids 45 upfront network requests
+  if (!videoEls[idx]) {
+    const v = document.createElement('video');
+    v.src       = IMAGES_DEF[idx].src;
+    v.muted     = true;
+    v.playsInline = true;
+    v.preload   = 'auto';
+    videoEls[idx] = v;
+  }
+  const v = videoEls[idx];
+  activeVideoEl  = v;
+  activeVideoIdx = idx;
+  v.currentTime  = 0;
+  v.play().catch(() => {});
+  videoStopTimer = setTimeout(stopVideo, 3000);
+}
+
+function stopVideo() {
+  clearTimeout(videoStopTimer);
+  if (activeVideoEl) { activeVideoEl.pause(); activeVideoEl.currentTime = 0; }
+  activeVideoEl  = null;
+  activeVideoIdx = -1;
+}
+
+// ─── Hit detection ────────────────────────────────────────────────────────────
+function getCellAt(mx, my) {
+  const W  = canvas.width / DPR;
+  const rox = Math.round(offX);
+  const roy = Math.round(offY);
+  const ox  = ((rox % TILE_W) + TILE_W) % TILE_W;
+
+  const firstCi = Math.floor(-ox / COL_STRIDE) - 1;
+  const lastCi  = firstCi + Math.ceil(W / COL_STRIDE) + 3;
+
+  for (let ci = firstCi; ci <= lastCi; ci++) {
+    const sx = ci * COL_STRIDE + ox;
+    if (sx + COL_WIDTH < mx || sx > mx) continue;
+
+    const colMod   = ((ci % BASE_COLS) + BASE_COLS) % BASE_COLS;
+    const assets   = colAssignments[colMod];
+    const cth      = colHeights[colMod];
+    const colOy    = ((roy % cth) + cth) % cth;
+    const colBase  = colMod * COL_V_OFFSET + colOy;
+    const k        = Math.floor((my - colBase) / cth);
+    const iterBase = colBase + k * cth;
+
+    let iy = iterBase;
+    for (const assetIdx of assets) {
+      const def = IMAGES_DEF[assetIdx];
+      const top = iy; iy += def.h + ROW_GAP;
+      if (my < top || my >= top + def.h) continue;
+      const ix = sx + ((COL_WIDTH - def.w) >> 1);
+      if (mx >= ix && mx < ix + def.w) return assetIdx;
+    }
+  }
+  return -1;
+}
+
+// ─── Draw ─────────────────────────────────────────────────────────────────────
+function draw() {
+  const W  = canvas.width / DPR;
+  const H  = canvas.height / DPR;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+
+  // Integer-pixel offsets eliminate sub-pixel jitter
+  const rox = Math.round(offX);
+  const roy = Math.round(offY);
+  const ox  = ((rox % TILE_W) + TILE_W) % TILE_W;
+
+  const firstCi = Math.floor(-ox / COL_STRIDE) - 1;
+  const lastCi  = firstCi + Math.ceil(W / COL_STRIDE) + 3;
+
+  ctx.fillStyle = '#e8e8e8'; // placeholder colour (set once outside the loops)
+
+  for (let ci = firstCi; ci <= lastCi; ci++) {
+    const sx = ci * COL_STRIDE + ox;
+    if (sx + COL_WIDTH < 0 || sx > W) continue;
+
+    const colMod = ((ci % BASE_COLS) + BASE_COLS) % BASE_COLS;
+    const assets = colAssignments[colMod];
+    // Each column tiles at its own natural height — no cross-column boundary gap
+    const cth    = colHeights[colMod];
+    const colOy  = ((roy % cth) + cth) % cth;
+    const colBase = colMod * COL_V_OFFSET + colOy;
+    const k0      = Math.floor(-colBase / cth) - 1;
+
+    for (let k = k0; ; k++) {
+      const iterBase = colBase + k * cth;
+      if (iterBase > H + 10) break;
+
+      let iy = iterBase;
+      for (const assetIdx of assets) {
+        const def = IMAGES_DEF[assetIdx];
+        const top = iy; iy += def.h + ROW_GAP;
+        if (top + def.h < 0 || top > H) continue;
+
+        const ix = sx + ((COL_WIDTH - def.w) >> 1);
+        const bm  = bitmaps[assetIdx];
+
+        if (assetIdx === activeVideoIdx && activeVideoEl && activeVideoEl.readyState >= 2) {
+          ctx.drawImage(activeVideoEl, ix, top, def.w, def.h);
+        } else if (bm) {
+          ctx.drawImage(bm, ix, top, def.w, def.h);
+        } else {
+          ctx.fillRect(ix, top, def.w, def.h); // placeholder while loading
+          enqueue(assetIdx, true);              // bump to front of queue
+        }
+      }
+    }
+  }
+}
+
+// ─── Animation loop ───────────────────────────────────────────────────────────
+const cursor   = document.getElementById('cursor');
+let lastTime   = null;
+let hoveredIdx = -1;
+
+function tick(ts) {
+  if (!lastTime) lastTime = ts;
+  const dt = Math.min(ts - lastTime, 50);
+  lastTime = ts;
+
+  // Direction steering
+  dirX += (targetDirX - dirX) * DIR_LERP;
+  dirY += (targetDirY - dirY) * DIR_LERP;
+  const mag = Math.sqrt(dirX * dirX + dirY * dirY);
+  const vx  = (dirX / mag) * SPEED;
+  const vy  = (dirY / mag) * SPEED;
+
+  if (!isDragging) { offX += vx * dt; offY += vy * dt; }
+
+  draw();
+
+  // Hover detection
+  const idx = getCellAt(mouseX, mouseY);
+  if (idx !== hoveredIdx) {
+    // Leaving a video cell
+    if (hoveredIdx >= 0 && IMAGES_DEF[hoveredIdx].type === 'video') stopVideo();
+    // Entering a video cell
+    if (idx >= 0 && IMAGES_DEF[idx].type === 'video') startVideo(idx);
+
+    hoveredIdx = idx;
+    cursor.style.background = idx >= 0 ? imgColors[idx] : '#000';
+    cursor.classList.toggle('hovering', idx >= 0);
+  }
+
+  requestAnimationFrame(tick);
+}
+
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
