@@ -975,6 +975,7 @@ function openIsland(idx, clickRect) {
     cell.dataset.type = d.type;
     cell.dataset.src  = d.src;
     if (d.type === 'video') cell.dataset.poster = d.poster || '';
+    cell.dataset.assetIdx = relIdx;
     const img = new Image();
     img.src = d.type === 'video' ? (d.poster || d.src) : d.src;
     img.loading = 'eager';
@@ -982,6 +983,52 @@ function openIsland(idx, clickRect) {
     img.style.aspectRatio = `${d.w}/${d.h}`;
     cell.appendChild(img);
     cell.style.setProperty('--cell-delay', `${i * 50}ms`); // pre-bake stagger
+
+    if (d.type === 'video') {
+      cell.addEventListener('mouseenter', () => {
+        // If a click-initiated video in another cell is playing, clean it up
+        if (islandVideoEl && !cell.contains(islandVideoEl)) {
+          const prevCell = islandVideoEl.closest('.island-cell');
+          islandVideoEl.pause();
+          islandVideoEl.remove();
+          if (prevCell) {
+            const prevDef = IMAGES_DEF[parseInt(prevCell.dataset.assetIdx)];
+            const pi = new Image();
+            pi.src = prevCell.dataset.poster || prevCell.dataset.src;
+            if (prevDef) pi.style.aspectRatio = `${prevDef.w}/${prevDef.h}`;
+            prevCell.appendChild(pi);
+          }
+          islandVideoEl = null;
+        }
+        // Start playback in this cell
+        let v = cell.querySelector('video');
+        if (!v) {
+          const existing = cell.querySelector('img');
+          if (existing) existing.remove();
+          v = document.createElement('video');
+          v.src = d.src;
+          v.muted = true;
+          v.playsInline = true;
+          v.loop = true;
+          v.controls = false;
+          cell.appendChild(v);
+        }
+        v.play().catch(() => {});
+        islandVideoEl = v;
+      });
+
+      cell.addEventListener('mouseleave', () => {
+        const v = cell.querySelector('video');
+        if (!v) return;
+        v.pause();
+        v.remove();
+        if (islandVideoEl === v) islandVideoEl = null;
+        const pi = new Image();
+        pi.src = d.poster || d.src;
+        pi.style.aspectRatio = `${d.w}/${d.h}`;
+        cell.appendChild(pi);
+      });
+    }
 
     const col = colHts[0] <= colHts[1] ? 0 : 1;
     colEls[col].appendChild(cell);
